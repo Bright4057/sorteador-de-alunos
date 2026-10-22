@@ -1,0 +1,1313 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sorteador de Lugares da Sala</title>
+<style>
+  :root {
+    --bg:#fbfdf5; --panel:#fffefa; --ink:#343b46; --muted:#78818d;
+    --accent:#8da9c4; --accent-dark:#607f9e; --accent2:#eaf1f7;
+    --danger:#b77979; --line:#e7e4df; --soft:#f0ede7; --mint:#e8f2ed;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px; background:var(--bg); color:var(--ink); font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+  main { max-width:1160px; margin:auto; }
+  h1 { margin:0 0 7px; font-size:clamp(1.55rem,3vw,2.15rem); font-weight:680; letter-spacing:-.035em; }
+  h2 { font-size:1.03rem; font-weight:700; margin:0 0 13px; letter-spacing:-.01em; }
+  p { margin:5px 0 12px; color:var(--muted); }
+  .layout { display:grid; grid-template-columns:minmax(280px,350px) minmax(0,1fr); gap:18px; align-items:start; margin-top:22px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:19px; box-shadow:0 5px 20px #44402f08; }
+  label { display:block; font-weight:650; font-size:.91rem; margin:13px 0 6px; }
+  input, textarea, select, button { font:inherit; }
+  input[type="number"], select, textarea { width:100%; padding:10px 12px; border:1px solid #e0ddd7; border-radius:11px; background:#fff; color:var(--ink); }
+  textarea { min-height:116px; resize:vertical; }
+  #separatedNames { min-height:76px; }
+  input:focus, textarea:focus, select:focus { outline:3px solid #dce8f1; border-color:#a8bfd3; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  .row > * { flex:1; min-width:100px; }
+  button { border:1px solid var(--line); border-radius:11px; padding:9px 12px; background:#fff; color:var(--ink); cursor:pointer; font-weight:650; transition:background .15s ease, transform .15s ease; }
+  button:hover { background:#f4f2ed; }
+  button:active { transform:translateY(1px); }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  button.primary:hover { background:var(--accent-dark); }
+  button.danger { color:#a56868; background:#fffafa; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .small { font-size:.86rem; color:var(--muted); }
+  .hidden { display:none !important; }
+  .status { margin-top:13px; padding:11px 13px; border-radius:11px; background:#eef3f7; color:#5b7185; font-size:.9rem; }
+  .status.error { background:#faeeee; color:#9d5c5c; }
+  .status.success { background:var(--mint); color:#557866; }
+  .classroom { border:1px solid var(--line); border-radius:14px; background:#fcfbf8; padding:14px; overflow:auto; }
+  .board { min-width:max-content; margin:auto; }
+  .front { text-align:center; padding:9px; margin:0 auto 14px; width:100%; border-radius:9px; background:#eeece6; color:#7c817f; font-size:.79rem; font-weight:750; letter-spacing:.09em; }
+  .gridSeats { display:grid; gap:8px; justify-content:center; }
+  .seat { width:72px; min-height:66px; border:1.5px solid #d7dfe5; background:#fff; border-radius:11px; padding:5px; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; gap:3px; }
+  .seat .seatNo { color:var(--muted); font-size:.7rem; }
+  .seat.disabled { background:#eeece8; border-style:dashed; opacity:.72; }
+  .seat.occupied { border-color:#9bb6ce; background:var(--accent2); }
+  .seat .student { display:block; width:100%; max-width:100%; font-size:.78rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .seat:not(.disabled) { cursor:pointer; }
+  .seat:focus-visible, button:focus-visible { outline:3px solid #cbdce9; outline-offset:2px; }
+  .freeCanvas { position:relative; width:100%; min-width:320px; min-height:450px; background-color:#fcfbf8; background-image:radial-gradient(#e5e1d9 1px,transparent 1px); background-size:19px 19px; border:1px solid var(--line); border-radius:14px; overflow:auto; cursor:grab; touch-action:none; }
+  .freeCanvas.panning { cursor:grabbing; }
+  .furniture { position:absolute; width:116px; height:50.23px; transform-origin:center center; display:flex; align-items:center; justify-content:center; background:#eadccf; border:1.5px solid #cbb5a3; clip-path:polygon(25% 0,75% 0,100% 100%,0 100%); /* bases 2:1; ângulos na base maior: 60° */ color:#78695f; font-size:.76rem; font-weight:700; cursor:grab; user-select:none; touch-action:none; }
+  .furniture.double { width:154px; height:66.68px; }
+  .furniture .tableLabel { pointer-events:none; background:#fff9; border-radius:5px; padding:2px 5px; text-align:center; }
+  .furniture.selected { outline:3px solid #2878ff; outline-offset:4px; box-shadow:0 0 0 2px rgba(40,120,255,.20); }
+  .chair.selected { outline:3px solid #2878ff; outline-offset:3px; box-shadow:0 0 0 2px rgba(40,120,255,.18); }
+  .selection-marquee { position:absolute; z-index:9999; border:1.5px solid #2878ff; background:rgba(40,120,255,.16); pointer-events:none; }
+  .freeCanvas.selecting { cursor:crosshair; }
+  .context-group-btn { position:absolute; z-index:10001; padding:7px 14px; border:0; border-radius:8px; background:#202124; color:#fff; box-shadow:0 3px 12px rgba(0,0,0,.22); font:600 13px system-ui,sans-serif; cursor:pointer; white-space:nowrap; }
+  .context-group-btn:hover { background:#34363a; }
+  .freeCanvas.selecting { cursor:crosshair; }
+  .furniture.grouped::after { content:' '; position:absolute; inset:-5px; border:1px dashed #8da9c4; border-radius:5px; pointer-events:none; }
+  .chair.selected { outline:2px solid #8da9c4; outline-offset:2px; }
+  .chair.selected { z-index:4; }
+  .rotateHandle { position:absolute; width:18px; height:18px; border-radius:50%; border:2px solid #fff; background:#6f94b5; box-shadow:0 0 0 1px #6f94b5, 0 2px 5px #0002; z-index:10; cursor:grab; touch-action:none; padding:0; display:flex; align-items:center; justify-content:center; color:white; font-size:12px; line-height:1; }
+  .rotateHandle:active { cursor:grabbing; }
+  .zoomControls { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:10px 0 0; padding:10px 12px; border:1px solid var(--line); border-radius:12px; background:#fffefa; }
+  .zoomControls input[type="range"] { flex:1; min-width:100px; accent-color:var(--accent-dark); }
+  .zoomValue { min-width:46px; text-align:center; font-size:.85rem; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .chair { position:absolute; width:51px; height:29px; min-height:29px; padding:2px; display:flex; flex-direction:column; justify-content:center; align-items:center; text-align:center; border:1.5px solid #d5dfe5; border-radius:7px; background:#fff; cursor:grab; touch-action:none; user-select:none; box-shadow:0 3px 8px #44402f0b; transform-origin:center center; }
+  .chair:active { cursor:grabbing; }
+  .chair.selected { border-color:var(--accent-dark); box-shadow:0 0 0 3px #dce8f1; }
+  .chair.occupied { background:var(--accent2); border-color:#9bb6ce; }
+  .chair .seatNo { font-size:.48rem; line-height:1.05; color:var(--muted); }
+  .chair .student { display:block; width:100%; max-width:100%; font-size:.52rem; line-height:1.05; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* Tooltip fixo à tela: o nome permanece legível mesmo quando a cadeira está girada. */
+  #studentTooltip {
+    position: fixed;
+    z-index: 99999;
+    display: none;
+    max-width: min(320px, calc(100vw - 24px));
+    padding: 7px 11px;
+    border-radius: 8px;
+    background: #17212b;
+    color: #fff;
+    border: 1px solid rgba(255,255,255,.22);
+    box-shadow: 0 5px 18px rgba(0,0,0,.24);
+    font: 600 13px/1.35 system-ui, sans-serif;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
+    pointer-events: none;
+    transform: none !important;
+  }
+  #studentTooltip.visible { display: block; }
+  .results { margin-top:19px; }
+  .resultList { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:8px; }
+  .resultItem { border:1px solid var(--line); border-radius:11px; padding:10px 12px; background:#fff; }
+  .resultItem strong { display:block; font-size:.88rem; }
+  .resultItem span { color:var(--muted); font-size:.88rem; overflow-wrap:anywhere; }
+  @media (max-width:850px) { body { padding:13px; } .layout { grid-template-columns:1fr; } .panel { padding:15px; } }
+</style>
+</head>
+<body>
+<div id="studentTooltip" role="tooltip" aria-hidden="true"></div>
+<main>
+  <h1>🎓 Sorteador de lugares da sala</h1>
+  <p>Cadastre os alunos, escolha o tipo de sala e sorteie os lugares. Você pode marcar alunos que devem ficar separados.</p>
+
+  <div class="layout">
+    <section class="panel">
+      <h2>1. Alunos e regras</h2>
+      <label for="names">Lista de alunos (um nome por linha)</label>
+      <textarea id="names" placeholder="Ana&#10;Bruno&#10;Carla&#10;Diego"></textarea>
+      <div class="row">
+        <button id="sortBtn" class="primary">Sortear lugares</button>
+        <button id="clearNamesBtn">Limpar nomes</button>
+      </div>
+
+      <label for="separatedNames">Alunos que devem ficar separados (um nome por linha)</label>
+      <textarea id="separatedNames" placeholder="Ex.: Ana&#10;Bruno"></textarea>
+      <p class="small">O programa tenta colocar esses alunos o mais longe possível uns dos outros. O resultado é uma tentativa aleatória, não uma garantia matemática.</p>
+
+      <label for="mode">Tipo de configuração da sala</label>
+      <select id="mode">
+        <option value="grid">Grade por células — sistema tradicional</option>
+        <option value="free">Grade livre — arrastar e posicionar cadeiras</option>
+      </select>
+
+      <div id="gridSettings">
+        <div class="row">
+          <div><label for="rows">Fileiras</label><input id="rows" type="number" min="1" max="12" value="6"></div>
+          <div><label for="cols">Cadeiras por fileira</label><input id="cols" type="number" min="1" max="12" value="6"></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button id="rebuildGridBtn">Atualizar grade</button>
+          <button id="allOnBtn">Ativar todas</button>
+          <button id="allOffBtn">Desativar todas</button>
+          <button id="invertBtn">Inverter seleção</button>
+        </div>
+        <p class="small">Clique em uma cadeira para ativá-la ou desativá-la. Cadeiras cinzas não entram no sorteio.</p>
+      </div>
+
+      <div id="freeSettings" class="hidden">
+        <label for="freeChairCount">Número exato de cadeiras</label>
+        <div class="row">
+          <input id="freeChairCount" type="number" min="0" max="150" value="12" aria-label="Número exato de cadeiras">
+          <button id="applyChairCountBtn" class="primary">Aplicar quantidade</button>
+        </div>
+        <div class="row" style="margin-top:9px">
+          <button id="addChairBtn">+ Adicionar cadeira</button>
+          <button id="resetChairsBtn">Reorganizar posições</button>
+        </div>
+        <label for="furnitureType">Adicionar mesa</label>
+        <div class="row">
+          <select id="furnitureType" aria-label="Tipo de mesa">
+            <option value="single">Mesa individual</option>
+            <option value="double">Dupla</option>
+          </select>
+          <button id="addTableBtn" class="primary">+ Adicionar mesa</button>
+        </div>
+        <div class="row" style="margin-top:9px">
+          <button id="rotateSelectedBtn">↻ Girar selecionado 15°</button>
+          <button id="duplicateObjectsBtn" disabled>⧉ Duplicar</button>
+          <button id="removeObjectBtn" class="danger" disabled>Remover selecionado(s)</button>
+        </div>
+        <div class="row" style="margin-top:9px">
+          <button id="groupObjectsBtn" disabled>Agrupar seleção</button>
+          <button id="ungroupObjectsBtn" disabled>Desagrupar</button>
+        </div>
+        <div class="row" style="margin-top:9px">
+          <button id="vertexSnapBtn" type="button" aria-pressed="true">Encaixe de vértices: ativado</button>
+        </div>
+        <p class="small">Ao aproximar um vértice de uma mesa do vértice de outra, eles se alinham automaticamente. Você pode desativar esse recurso quando quiser.</p>
+        <p class="small">Clique em um objeto para selecioná-lo; use Shift+clique para adicionar/remover objetos da seleção, ou arraste sobre o espaço vazio para selecionar vários com uma caixa, como no Canva. Use Ctrl/⌘+G para agrupar e Ctrl/⌘+Shift+G para desagrupar. Use Ctrl/⌘+D ou o botão Duplicar para copiar um objeto ou grupo. Arraste o ícone ↻ acima da seleção para girar um objeto ou grupo inteiro. Esc limpa a seleção. Para mover o mapa, use o botão do meio do mouse.</p>
+        <button id="removeChairBtn" class="danger hidden" disabled>Remover cadeira selecionada</button>
+      </div>
+
+      <div id="status" class="status" role="status" aria-live="polite">Adicione os nomes dos alunos para começar.</div>
+    </section>
+
+    <section class="panel">
+      <h2>2. Mapa da sala</h2>
+      <div id="gridView" class="classroom">
+        <div class="board">
+          <div class="front" id="frontGrid">QUADRO / PROFESSOR</div>
+          <div id="seatGrid" class="gridSeats"></div>
+        </div>
+      </div>
+      <div id="freeView" class="hidden">
+        <div class="front">QUADRO / PROFESSOR</div>
+        <div id="freeCanvas" class="freeCanvas" aria-label="Área para posicionar as cadeiras"></div>
+        <div class="zoomControls" aria-label="Controles de zoom da grade livre">
+          <button id="zoomOutBtn" type="button" aria-label="Diminuir zoom">−</button>
+          <input id="zoomRange" type="range" min="50" max="160" step="10" value="100" aria-label="Zoom da grade">
+          <button id="zoomInBtn" type="button" aria-label="Aumentar zoom">+</button>
+          <button id="zoomResetBtn" type="button">Redefinir</button>
+          <span id="zoomValue" class="zoomValue">100%</span>
+        </div>
+      </div>
+      <div class="results">
+        <h2>3. Resultado do sorteio</h2>
+        <div class="row" style="margin-bottom:10px">
+          <button id="copyBtn">Copiar resultado</button>
+          <button id="newDrawBtn" class="primary">Novo sorteio</button>
+        </div>
+        <div id="results" class="resultList"><p class="small">O resultado aparecerá aqui após o sorteio.</p></div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script>
+(() => {
+  // Elementos principais da interface.
+  const $ = id => document.getElementById(id);
+  const namesEl = $('names');
+  const separatedEl = $('separatedNames');
+  const modeEl = $('mode');
+  const rowsEl = $('rows');
+  const colsEl = $('cols');
+  const seatGrid = $('seatGrid');
+  const freeCanvas = $('freeCanvas');
+  const resultsEl = $('results');
+  const statusEl = $('status');
+
+  // Estado da configuração: assentos ativos, cadeiras livres e último sorteio.
+  let activeSeats = new Set();
+  let freeChairs = [];
+  let tables = [];
+  let nextChairId = 1;
+  let nextTableId = 1;
+  let vertexSnapEnabled = true;
+  const vertexSnapRadius = 18; // raio de aproximação em pixels da área de trabalho
+  let selectedObject = null; // objeto ativo/último selecionado (compatibilidade com controles antigos)
+  let selectedObjects = [];  // seleção múltipla na ordem em que os objetos foram selecionados
+  let nextGroupId = 1;
+  let panState = null;
+  let zoomLevel = 1;
+  let lastAssignments = [];
+
+  // Lê nomes, remove espaços extras e ignora linhas vazias.
+  function readLines(element) {
+    return element.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  }
+  function uniqueNames(list) {
+    return [...new Set(list)];
+  }
+  function setStatus(message, type = '') {
+    statusEl.textContent = message;
+    statusEl.className = 'status' + (type ? ' ' + type : '');
+  }
+  function currentMode() { return modeEl.value; }
+
+  // Limpa a exibição do sorteio anterior sem alterar a configuração das cadeiras.
+  function clearResult() {
+    lastAssignments = [];
+    document.querySelectorAll('.seat, .chair').forEach(node => {
+      node.classList.remove('occupied');
+      const student = node.querySelector('.student');
+      if (student) {
+        student.textContent = '';
+        student.removeAttribute('title');
+      }
+      node.removeAttribute('title');
+      node.removeAttribute('aria-label');
+    });
+    if (resultsEl) {
+      resultsEl.replaceChildren();
+      const message = document.createElement('p');
+      message.className = 'small';
+      message.textContent = 'O resultado aparecerá aqui após o sorteio.';
+      resultsEl.appendChild(message);
+    }
+  }
+
+  // Mostra o nome completo num balão horizontal independente da rotação da cadeira.
+  const studentTooltip = $('studentTooltip');
+  function hideStudentTooltip() {
+    studentTooltip.classList.remove('visible');
+    studentTooltip.setAttribute('aria-hidden', 'true');
+  }
+  function showStudentTooltip(node, clientX, clientY) {
+    const fullName = (node?.title || node?.querySelector('.student')?.title || '').trim();
+    if (!fullName || !node?.classList.contains('occupied')) {
+      hideStudentTooltip();
+      return;
+    }
+    studentTooltip.textContent = fullName;
+    studentTooltip.classList.add('visible');
+    studentTooltip.setAttribute('aria-hidden', 'false');
+    // Primeiro posiciona para medir e depois mantém o balão dentro da janela.
+    studentTooltip.style.left = '0px';
+    studentTooltip.style.top = '0px';
+    const rect = studentTooltip.getBoundingClientRect();
+    const margin = 10;
+    let left = (Number.isFinite(clientX) ? clientX + 14 : node.getBoundingClientRect().left);
+    let top = (Number.isFinite(clientY) ? clientY + 16 : node.getBoundingClientRect().bottom + 6);
+    if (left + rect.width > window.innerWidth - margin) left = window.innerWidth - rect.width - margin;
+    if (top + rect.height > window.innerHeight - margin) top = (Number.isFinite(clientY) ? clientY - rect.height - 12 : window.innerHeight - rect.height - margin);
+    studentTooltip.style.left = `${Math.max(margin, left)}px`;
+    studentTooltip.style.top = `${Math.max(margin, top)}px`;
+  }
+  document.addEventListener('pointerover', event => {
+    const node = event.target.closest?.('.seat, .chair');
+    if (node) showStudentTooltip(node, event.clientX, event.clientY);
+  });
+  document.addEventListener('pointermove', event => {
+    if (!studentTooltip.classList.contains('visible')) return;
+    const node = event.target.closest?.('.seat, .chair');
+    if (node) showStudentTooltip(node, event.clientX, event.clientY);
+  });
+  document.addEventListener('pointerout', event => {
+    const node = event.target.closest?.('.seat, .chair');
+    if (node && !node.contains(event.relatedTarget)) hideStudentTooltip();
+  });
+  document.addEventListener('focusin', event => {
+    const node = event.target.closest?.('.seat, .chair');
+    if (node) showStudentTooltip(node);
+  });
+  document.addEventListener('focusout', event => {
+    if (event.target.closest?.('.seat, .chair')) hideStudentTooltip();
+  });
+  window.addEventListener('scroll', hideStudentTooltip, true);
+  window.addEventListener('resize', hideStudentTooltip);
+
+  // Alterna entre a grade tradicional e o modo de cadeiras livres.
+  function updateMode() {
+    const isGrid = currentMode() === 'grid';
+    $('gridSettings').classList.toggle('hidden', !isGrid);
+    $('freeSettings').classList.toggle('hidden', isGrid);
+    $('gridView').classList.toggle('hidden', !isGrid);
+    $('freeView').classList.toggle('hidden', isGrid);
+    // Recria a visualização ativa usando seus próprios dados, sem misturar os modos.
+    if (isGrid) buildGrid(true);
+    else renderFreeChairs();
+    updateSelectedControls();
+    setStatus(isGrid
+      ? 'Grade por células pronta: clique nos lugares para ativar ou desativar.'
+      : 'Grade livre pronta: arraste as cadeiras para montar a sala.');
+  }
+
+  // Cria a grade e ativa todos os lugares inicialmente.
+  function buildGrid(keepSelection = false) {
+    let rows = Math.max(1, Math.min(12, parseInt(rowsEl.value, 10) || 1));
+    let cols = Math.max(1, Math.min(12, parseInt(colsEl.value, 10) || 1));
+    rowsEl.value = rows;
+    colsEl.value = cols;
+    const total = rows * cols;
+    const old = new Set(activeSeats);
+    activeSeats = new Set();
+    for (let i = 0; i < total; i++) {
+      if (!keepSelection || old.has(i) || old.size === 0) activeSeats.add(i);
+    }
+    seatGrid.style.gridTemplateColumns = `repeat(${cols}, 72px)`;
+    seatGrid.replaceChildren();
+    for (let i = 0; i < total; i++) {
+      const seat = document.createElement('button');
+      seat.type = 'button';
+      seat.className = 'seat' + (activeSeats.has(i) ? '' : ' disabled');
+      seat.dataset.index = String(i);
+      seat.innerHTML = `<span class="seatNo">Lugar ${i + 1}</span><span class="student"></span>`;
+      seat.addEventListener('click', () => {
+        if (activeSeats.has(i)) activeSeats.delete(i); else activeSeats.add(i);
+        seat.classList.toggle('disabled', !activeSeats.has(i));
+        clearResult();
+      });
+      seatGrid.appendChild(seat);
+    }
+    clearResult();
+  }
+
+  function allFreeObjects() {
+    return [
+      ...tables.map(object => ({ type: 'table', id: object.id, object })),
+      ...freeChairs.map(object => ({ type: 'chair', id: object.id, object }))
+    ];
+  }
+  function findObject(type, id) {
+    return (type === 'chair' ? freeChairs : tables).find(item => item.id === id);
+  }
+  function selectionHas(type, id) {
+    return selectedObjects.some(item => item.type === type && item.id === id);
+  }
+  let contextGroupButton = null;
+  function syncSelectionVisuals() {
+    freeCanvas.querySelectorAll('.chair, .furniture').forEach(el => {
+      const type = el.classList.contains('chair') ? 'chair' : 'table';
+      const id = Number(type === 'chair' ? el.dataset.chairId : el.dataset.tableId);
+      el.classList.toggle('selected', selectionHas(type, id));
+    });
+    updateContextGroupButton();
+  }
+  function updateContextGroupButton() {
+    if (contextGroupButton) {
+      contextGroupButton.remove();
+      contextGroupButton = null;
+    }
+    if (!selectedObjects.length) return;
+    const selectedEntries = selectedObjects
+      .map(item => ({ ...item, object: findObject(item.type, item.id) }))
+      .filter(item => item.object);
+    if (selectedEntries.length < 2) return;
+    const allGrouped = selectedEntries.every(item => !!item.object.groupId);
+    const sameGroup = allGrouped && selectedEntries.every(item => item.object.groupId === selectedEntries[0].object.groupId);
+    contextGroupButton = document.createElement('button');
+    contextGroupButton.type = 'button';
+    contextGroupButton.className = 'context-group-btn';
+    contextGroupButton.textContent = sameGroup ? 'Desagrupar' : 'Agrupar';
+    contextGroupButton.setAttribute('aria-label', contextGroupButton.textContent);
+    contextGroupButton.addEventListener('pointerdown', event => event.stopPropagation());
+    contextGroupButton.addEventListener('click', event => {
+      event.stopPropagation();
+      if (sameGroup) ungroupSelectedObjects();
+      else groupSelectedObjects();
+    });
+    const bounds = selectedEntries.reduce((acc, item) => {
+      const b = objectBounds({ type:item.type, object:item.object });
+      acc.left = Math.min(acc.left, b.left);
+      acc.top = Math.min(acc.top, b.top);
+      acc.right = Math.max(acc.right, b.right);
+      return acc;
+    }, { left:Infinity, top:Infinity, right:-Infinity });
+    contextGroupButton.style.left = `${Math.max(4, bounds.left * zoomLevel)}px`;
+    contextGroupButton.style.top = `${Math.max(4, bounds.top * zoomLevel - 38)}px`;
+    freeCanvas.appendChild(contextGroupButton);
+  }
+  function updateSelectedControls() {
+    const has = selectedObjects.length > 0;
+    $('removeObjectBtn').disabled = !has;
+    $('duplicateObjectsBtn').disabled = !has;
+    $('removeChairBtn').disabled = !has || !selectedObjects.some(item => item.type === 'chair');
+    const selectedEntries = selectedObjects.map(item => ({ ...item, object: findObject(item.type, item.id) })).filter(item => item.object);
+    const allGrouped = selectedEntries.length > 0 && selectedEntries.every(item => !!item.object.groupId);
+    const sameGroup = allGrouped && selectedEntries.every(item => item.object.groupId === selectedEntries[0].object.groupId);
+    $('groupObjectsBtn').disabled = selectedEntries.length < 2 || sameGroup;
+    $('ungroupObjectsBtn').disabled = !sameGroup;
+    $('groupObjectsBtn').textContent = 'Agrupar';
+    $('ungroupObjectsBtn').textContent = 'Desagrupar';
+  }
+
+  // Distribui cadeiras em uma grade inicial; depois elas podem ser arrastadas livremente.
+  function arrangeChairPositions(chairs) {
+    const count = chairs.length;
+    const cols = Math.max(1, Math.min(7, Math.ceil(Math.sqrt(count || 1))));
+    chairs.forEach((chair, i) => {
+      chair.x = 16 + (i % cols) * 66;
+      chair.y = 16 + Math.floor(i / cols) * 45;
+      if (chair.rotation === undefined) chair.rotation = 0;
+    });
+    const rows = Math.ceil(count / cols);
+    freeCanvas.style.minHeight = Math.max(450, 45 + Math.max(rows, Math.ceil(tables.length / 3)) * 90) + 'px';
+    updateCanvasExtent();
+  }
+
+  // Mantém a área de trabalho grande o bastante para o nível de zoom atual.
+  function updateCanvasExtent() {
+    const maxX = Math.max(900, ...freeChairs.map(c => c.x + 90), ...tables.map(t => t.x + 180));
+    const maxY = Math.max(650, ...freeChairs.map(c => c.y + 90), ...tables.map(t => t.y + 140));
+    freeCanvas.style.width = '100%';
+    freeCanvas.style.minWidth = '320px';
+    freeCanvas.style.minHeight = '450px';
+    freeCanvas.style.height = '450px';
+    freeCanvas.style.paddingRight = Math.ceil(maxX * zoomLevel) + 'px';
+    freeCanvas.style.paddingBottom = Math.ceil(maxY * zoomLevel) + 'px';
+    freeCanvas.style.backgroundSize = `${19 * zoomLevel}px ${19 * zoomLevel}px`;
+  }
+
+  function setZoom(value) {
+    zoomLevel = Math.max(0.5, Math.min(1.6, value));
+    $('zoomRange').value = String(Math.round(zoomLevel * 100 / 10) * 10);
+    $('zoomValue').textContent = `${Math.round(zoomLevel * 100)}%`;
+    updateCanvasExtent();
+    renderFreeChairs();
+  }
+
+  // Aplica exatamente a quantidade escolhida no campo (0 a 150).
+  function applyExactChairCount() {
+    const input = $('freeChairCount');
+    const count = Math.max(0, Math.min(150, parseInt(input.value, 10) || 0));
+    input.value = count;
+    if (freeChairs.length > count) {
+      freeChairs = freeChairs.slice(0, count);
+      if (selectedObject?.type === 'chair' && !freeChairs.some(c => c.id === selectedObject.id)) selectedObject = null;
+    } else {
+      while (freeChairs.length < count) freeChairs.push({ id: nextChairId++, x: 16, y: 16, rotation: 0 });
+    }
+    arrangeChairPositions(freeChairs);
+    renderFreeChairs();
+    clearResult();
+    updateSelectedControls();
+    const students = uniqueNames(readLines(namesEl)).length;
+    setStatus(count < students
+      ? `Quantidade definida: ${count} cadeira(s). Há ${students} aluno(s), então adicione cadeiras antes de sortear.`
+      : `Quantidade definida: exatamente ${count} cadeira(s).`, count < students ? 'error' : 'success');
+  }
+
+  // Inicializa o modo livre com o número exato informado.
+  function resetFreeChairs() {
+    const count = Math.max(0, Math.min(150, parseInt($('freeChairCount').value, 10) || 0));
+    $('freeChairCount').value = count;
+    freeChairs = [];
+    nextChairId = 1;
+    selectedObject = null;
+    for (let i = 0; i < count; i++) freeChairs.push({ id: nextChairId++, x: 16, y: 16, rotation: 0 });
+    arrangeChairPositions(freeChairs);
+    renderFreeChairs();
+    clearResult();
+    updateSelectedControls();
+  }
+
+  function selectObject(type, id, node, additive = false) {
+    const object = findObject(type, id);
+    if (!object) return;
+    const already = selectionHas(type, id);
+    if (!additive) {
+      selectedObjects = [];
+      if (object.groupId) {
+        allFreeObjects().filter(entry => entry.object.groupId === object.groupId)
+          .forEach(entry => selectedObjects.push({ type: entry.type, id: entry.id }));
+        selectedObjects = selectedObjects.filter(item => !(item.type === type && item.id === id));
+        selectedObjects.push({ type, id }); // o objeto clicado fica por último na ordem de seleção
+      } else {
+        selectedObjects.push({ type, id });
+      }
+    } else if (already) {
+      selectedObjects = selectedObjects.filter(item => !(item.type === type && item.id === id));
+      if (object.groupId) {
+        selectedObjects = selectedObjects.filter(item => findObject(item.type, item.id)?.groupId !== object.groupId);
+      }
+    } else if (object.groupId) {
+      allFreeObjects().filter(entry => entry.object.groupId === object.groupId).forEach(entry => {
+        if (!selectionHas(entry.type, entry.id)) selectedObjects.push({ type: entry.type, id: entry.id });
+      });
+      selectedObjects = selectedObjects.filter(item => !(item.type === type && item.id === id));
+      selectedObjects.push({ type, id }); // mantém a última escolha como mesa ativa para o encaixe
+    } else {
+      selectedObjects.push({ type, id });
+    }
+    selectedObject = selectedObjects.length ? selectedObjects[selectedObjects.length - 1] : null;
+    syncSelectionVisuals();
+    updateSelectedControls();
+    removeRotateHandle();
+    if (selectedObjects.length >= 1) createRotateHandle();
+  }
+
+  function rotateSelected() {
+    if (!selectedObjects.length) {
+      setStatus('Selecione uma cadeira ou mesa antes de girar.', 'error');
+      return;
+    }
+    const items = selectedObjects.map(item => ({ ...item, object: findObject(item.type, item.id) })).filter(item => item.object);
+    if (items.length === 1) {
+      items[0].object.rotation = ((items[0].object.rotation || 0) + 15) % 360;
+    } else {
+      const center = items.reduce((acc, item) => {
+        const w = item.type === 'chair' ? 51 : item.object.type === 'double' ? 154 : 116;
+        const h = item.type === 'chair' ? 29 : item.object.type === 'double' ? 66.68 : 50.23;
+        acc.x += item.object.x + w / 2; acc.y += item.object.y + h / 2; return acc;
+      }, { x: 0, y: 0 });
+      center.x /= items.length; center.y /= items.length;
+      const radians = Math.PI / 12;
+      items.forEach(item => {
+        const w = item.type === 'chair' ? 51 : item.object.type === 'double' ? 154 : 116;
+        const h = item.type === 'chair' ? 29 : item.object.type === 'double' ? 66.68 : 50.23;
+        const cx = item.object.x + w / 2, cy = item.object.y + h / 2;
+        item.object.x = Math.max(0, center.x + (cx-center.x)*Math.cos(radians) - (cy-center.y)*Math.sin(radians) - w/2);
+        item.object.y = Math.max(0, center.y + (cx-center.x)*Math.sin(radians) + (cy-center.y)*Math.cos(radians) - h/2);
+        item.object.rotation = ((item.object.rotation || 0) + 15) % 360;
+      });
+    }
+    renderFreeChairs();
+    clearResult();
+  }
+
+  function removeSelectedObject() {
+    if (!selectedObjects.length) return;
+    const selectedChairs = new Set(selectedObjects.filter(item => item.type === 'chair').map(item => item.id));
+    const selectedTables = new Set(selectedObjects.filter(item => item.type === 'table').map(item => item.id));
+    freeChairs = freeChairs.filter(c => !selectedChairs.has(c.id));
+    tables = tables.filter(t => !selectedTables.has(t.id));
+    $('freeChairCount').value = freeChairs.length;
+    selectedObjects = [];
+    selectedObject = null;
+    arrangeChairPositions(freeChairs);
+    renderFreeChairs();
+    clearResult();
+    updateSelectedControls();
+    setStatus('Objeto(s) removido(s).', 'success');
+  }
+
+  function groupSelectedObjects() {
+    if (selectedObjects.length < 2) return;
+    const groupId = nextGroupId++;
+    selectedObjects.forEach(item => {
+      const object = findObject(item.type, item.id);
+      if (object) object.groupId = groupId;
+    });
+    renderFreeChairs();
+    setStatus(`${selectedObjects.length} objetos agrupados.`, 'success');
+  }
+  function ungroupSelectedObjects() {
+    const groupIds = new Set(selectedObjects.map(item => findObject(item.type, item.id)?.groupId).filter(Boolean));
+    if (!groupIds.size) return;
+    allFreeObjects().forEach(entry => {
+      if (groupIds.has(entry.object.groupId)) delete entry.object.groupId;
+    });
+    renderFreeChairs();
+    setStatus('Grupo(s) desagrupado(s).', 'success');
+  }
+
+  function duplicateSelectedObjects() {
+    const originals = selectedObjects
+      .map(item => ({ type:item.type, object:findObject(item.type, item.id) }))
+      .filter(item => item.object);
+    if (!originals.length) {
+      setStatus('Selecione um objeto ou grupo para duplicar.', 'error');
+      return;
+    }
+    const groupMap = new Map();
+    const copies = [];
+    originals.forEach(({type, object}) => {
+      const clone = { ...object };
+      if (type === 'chair') clone.id = nextChairId++;
+      else clone.id = nextTableId++;
+      clone.x = Math.max(0, (object.x || 0) + 30);
+      clone.y = Math.max(0, (object.y || 0) + 30);
+      if (object.groupId) {
+        if (!groupMap.has(object.groupId)) groupMap.set(object.groupId, nextGroupId++);
+        clone.groupId = groupMap.get(object.groupId);
+      } else {
+        delete clone.groupId;
+      }
+      if (type === 'chair') freeChairs.push(clone);
+      else tables.push(clone);
+      copies.push({type, id:clone.id});
+    });
+    selectedObjects = copies;
+    selectedObject = copies[copies.length - 1] || null;
+    renderFreeChairs();
+    clearResult();
+    setStatus(`${copies.length} objeto(s) duplicado(s). A cópia foi selecionada para mover ou girar.`, 'success');
+  }
+
+  // Adiciona mesa trapezoidal individual ou de dois lugares.
+  function addTable() {
+    const type = $('furnitureType').value;
+    const i = tables.length;
+    tables.push({ id: nextTableId++, type, x: 24 + (i % 3) * 170, y: 24 + Math.floor(i / 3) * 125, rotation: 0 });
+    freeCanvas.style.minHeight = Math.max(freeCanvas.clientHeight, 150 + Math.floor(i / 3) * 125) + 'px';
+    renderFreeChairs();
+    clearResult();
+    setStatus(type === 'double' ? 'Mesa dupla adicionada.' : 'Mesa individual adicionada.', 'success');
+  }
+
+  // Puxador circular de rotação, inspirado na interação do Canva.
+  let rotateHandle = null;
+  function removeRotateHandle() {
+    if (rotateHandle) rotateHandle.remove();
+    rotateHandle = null;
+  }
+  function selectedObjectData() {
+    if (!selectedObject) return null;
+    const list = selectedObject.type === 'chair' ? freeChairs : tables;
+    const object = list.find(item => item.id === selectedObject.id);
+    if (!object) return null;
+    const isChair = selectedObject.type === 'chair';
+    return { object, width: (isChair ? 51 : object.type === 'double' ? 154 : 116), height: (isChair ? 29 : object.type === 'double' ? 88 : 78) };
+  }
+  function selectionBounds() {
+    const items = selectedObjects.map(item => ({ ...item, object: findObject(item.type, item.id) })).filter(item => item.object);
+    if (!items.length) return null;
+    const dims = item => ({
+      w: item.type === 'chair' ? 51 : item.object.type === 'double' ? 154 : 116,
+      h: item.type === 'chair' ? 29 : item.object.type === 'double' ? 66.68 : 50.23
+    });
+    const boxes = items.map(item => {
+      const d = dims(item);
+      return { left:item.object.x, top:item.object.y, right:item.object.x+d.w, bottom:item.object.y+d.h };
+    });
+    return {
+      left: Math.min(...boxes.map(b=>b.left)), top: Math.min(...boxes.map(b=>b.top)),
+      right: Math.max(...boxes.map(b=>b.right)), bottom: Math.max(...boxes.map(b=>b.bottom)),
+      cx: (Math.min(...boxes.map(b=>b.left)) + Math.max(...boxes.map(b=>b.right))) / 2,
+      cy: (Math.min(...boxes.map(b=>b.top)) + Math.max(...boxes.map(b=>b.bottom))) / 2
+    };
+  }
+  function positionRotateHandle() {
+    if (!rotateHandle || !selectedObject) return;
+    const bounds = selectionBounds();
+    if (!bounds) { removeRotateHandle(); return; }
+    rotateHandle.style.left = `${bounds.cx * zoomLevel - 9}px`;
+    rotateHandle.style.top = `${bounds.top * zoomLevel - 29}px`;
+  }
+  function createRotateHandle() {
+    removeRotateHandle();
+    if (!selectedObjects.length) return;
+    rotateHandle = document.createElement('button');
+    rotateHandle.type = 'button';
+    rotateHandle.className = 'rotateHandle';
+    rotateHandle.textContent = '↻';
+    rotateHandle.title = selectedObjects.length > 1 ? 'Arraste para girar o grupo' : 'Arraste para girar';
+    rotateHandle.setAttribute('aria-label', selectedObjects.length > 1 ? 'Arraste para girar o grupo selecionado' : 'Arraste para girar o objeto selecionado');
+    positionRotateHandle();
+    rotateHandle.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const bounds = selectionBounds();
+      if (!bounds) return;
+      const centerX = freeCanvas.getBoundingClientRect().left + bounds.cx * zoomLevel - freeCanvas.scrollLeft;
+      const centerY = freeCanvas.getBoundingClientRect().top + bounds.cy * zoomLevel - freeCanvas.scrollTop;
+      const startAngle = Math.atan2(event.clientY - centerY, event.clientX - centerX) * 180 / Math.PI;
+      const initial = selectedObjects.map(item => {
+        const object = findObject(item.type, item.id);
+        if (!object) return null;
+        const width = item.type === 'chair' ? 51 : object.type === 'double' ? 154 : 116;
+        const height = item.type === 'chair' ? 29 : object.type === 'double' ? 66.68 : 50.23;
+        return { ...item, object, x:object.x, y:object.y, rotation:object.rotation||0, width, height,
+          cx:object.x+width/2, cy:object.y+height/2 };
+      }).filter(Boolean);
+      rotateHandle.setPointerCapture?.(event.pointerId);
+      const move = e => {
+        const angle = Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180 / Math.PI;
+        const delta = angle - startAngle;
+        const radians = delta * Math.PI / 180;
+        initial.forEach(item => {
+          const dx = item.cx - bounds.cx, dy = item.cy - bounds.cy;
+          item.object.x = Math.max(0, bounds.cx + dx*Math.cos(radians) - dy*Math.sin(radians) - item.width/2);
+          item.object.y = Math.max(0, bounds.cy + dx*Math.sin(radians) + dy*Math.cos(radians) - item.height/2);
+          item.object.rotation = ((item.rotation + delta) % 360 + 360) % 360;
+          const selector = item.type === 'chair' ? `.chair[data-chair-id="${item.id}"]` : `.furniture[data-table-id="${item.id}"]`;
+          const node = freeCanvas.querySelector(selector);
+          if (node) {
+            node.style.left = (item.object.x * zoomLevel) + 'px';
+            node.style.top = (item.object.y * zoomLevel) + 'px';
+            node.style.transform = `scale(${zoomLevel}) rotate(${item.object.rotation}deg)`;
+          }
+        });
+        updateCanvasExtent();
+        positionRotateHandle();
+      };
+      const stop = () => {
+        rotateHandle?.removeEventListener('pointermove', move);
+        rotateHandle?.removeEventListener('pointerup', stop);
+        rotateHandle?.removeEventListener('pointercancel', stop);
+        clearResult();
+        renderFreeChairs();
+      };
+      rotateHandle.addEventListener('pointermove', move);
+      rotateHandle.addEventListener('pointerup', stop);
+      rotateHandle.addEventListener('pointercancel', stop);
+    });
+    freeCanvas.appendChild(rotateHandle);
+  }
+
+  // Calcula os vértices do trapézio considerando tamanho e rotação.
+  function getTableVertices(table) {
+    const width = table.type === 'double' ? 154 : 116;
+    // Altura geométrica que mantém os ângulos da base maior em 60°.
+    const height = width * Math.sqrt(3) / 4;
+    const points = [
+      { x: width * 0.25, y: 0 },
+      { x: width * 0.75, y: 0 },
+      { x: width, y: height },
+      { x: 0, y: height }
+    ];
+    const angle = (table.rotation || 0) * Math.PI / 180;
+    const cx = width / 2, cy = height / 2;
+    return points.map(point => {
+      const dx = point.x - cx, dy = point.y - cy;
+      return {
+        x: table.x + cx + dx * Math.cos(angle) - dy * Math.sin(angle),
+        y: table.y + cy + dx * Math.sin(angle) + dy * Math.cos(angle)
+      };
+    });
+  }
+
+  function normalizeParallelAngle(angle) {
+    // Mantém a menor rotação necessária para tornar duas retas paralelas.
+    while (angle > 90) angle -= 180;
+    while (angle < -90) angle += 180;
+    return angle;
+  }
+
+  // Ao encaixar vértices, também gira a mesa para alinhar perfeitamente um lado
+  // com um lado da mesa de destino.
+  function snapTableVertices(movingTable, movingGroupIds = new Set()) {
+    if (!vertexSnapEnabled || !movingTable) return false;
+    const originalVertices = getTableVertices(movingTable);
+    let bestPair = null;
+
+    tables.filter(table => table.id !== movingTable.id && !movingGroupIds.has(table.id)).forEach(targetTable => {
+      const targetVertices = getTableVertices(targetTable);
+      originalVertices.forEach((movingVertex, movingIndex) => {
+        targetVertices.forEach((targetVertex, targetIndex) => {
+          const distance = Math.hypot(movingVertex.x - targetVertex.x, movingVertex.y - targetVertex.y);
+          if (distance <= vertexSnapRadius && (!bestPair || distance < bestPair.distance)) {
+            bestPair = { distance, movingIndex, targetIndex, targetTable };
+          }
+        });
+      });
+    });
+    if (!bestPair) return false;
+
+    const targetVertices = getTableVertices(bestPair.targetTable);
+    const movingIndex = bestPair.movingIndex;
+    const targetIndex = bestPair.targetIndex;
+    const movingAdjacent = [(movingIndex + 1) % 4, (movingIndex + 3) % 4];
+    const targetAdjacent = [(targetIndex + 1) % 4, (targetIndex + 3) % 4];
+    let bestRotation = null;
+
+    movingAdjacent.forEach(mi => {
+      targetAdjacent.forEach(ti => {
+        const movingAngle = Math.atan2(
+          originalVertices[mi].y - originalVertices[movingIndex].y,
+          originalVertices[mi].x - originalVertices[movingIndex].x
+        ) * 180 / Math.PI;
+        const targetAngle = Math.atan2(
+          targetVertices[ti].y - targetVertices[targetIndex].y,
+          targetVertices[ti].x - targetVertices[targetIndex].x
+        ) * 180 / Math.PI;
+        const delta = normalizeParallelAngle(targetAngle - movingAngle);
+        if (!bestRotation || Math.abs(delta) < Math.abs(bestRotation.delta)) {
+          bestRotation = { delta };
+        }
+      });
+    });
+
+    movingTable.rotation = ((movingTable.rotation || 0) + bestRotation.delta + 360) % 360;
+    const rotatedVertices = getTableVertices(movingTable);
+    const movingVertex = rotatedVertices[movingIndex];
+    const targetVertex = targetVertices[targetIndex];
+    movingTable.x = Math.max(0, movingTable.x + targetVertex.x - movingVertex.x);
+    movingTable.y = Math.max(0, movingTable.y + targetVertex.y - movingVertex.y);
+    return true;
+  }
+
+  function updateVertexSnapButton() {
+    const button = $('vertexSnapBtn');
+    if (!button) return;
+    button.textContent = `Encaixe de vértices: ${vertexSnapEnabled ? 'ativado' : 'desativado'}`;
+    button.setAttribute('aria-pressed', String(vertexSnapEnabled));
+    button.classList.toggle('primary', vertexSnapEnabled);
+  }
+
+  // Renderiza mesas e cadeiras. Arrastar um objeto move apenas esse objeto.
+  function renderFreeChairs() {
+    removeRotateHandle();
+    freeCanvas.replaceChildren();
+
+    function attachObjectEvents(node, object, type) {
+      node.addEventListener('pointerdown', event => {
+        if (event.button !== undefined && event.button !== 0) return;
+        event.stopPropagation();
+        const additive = event.ctrlKey || event.metaKey || event.shiftKey;
+        selectObject(type, object.id, node, additive);
+        if (!selectionHas(type, object.id)) return;
+        const moving = selectedObjects.map(item => ({
+          ...item, object: findObject(item.type, item.id)
+        })).filter(item => item.object).map(item => ({
+          ...item, x: item.object.x, y: item.object.y
+        }));
+        const startX = event.clientX, startY = event.clientY;
+        node.setPointerCapture?.(event.pointerId);
+        const move = e => {
+          const dx = (e.clientX - startX) / zoomLevel;
+          const dy = (e.clientY - startY) / zoomLevel;
+          moving.forEach(item => {
+            item.object.x = Math.max(0, item.x + dx);
+            item.object.y = Math.max(0, item.y + dy);
+            const selector = item.type === 'chair' ? `.chair[data-chair-id="${item.id}"]` : `.furniture[data-table-id="${item.id}"]`;
+            const el = freeCanvas.querySelector(selector);
+            if (el) { el.style.left = (item.object.x * zoomLevel) + 'px'; el.style.top = (item.object.y * zoomLevel) + 'px'; }
+          });
+          updateCanvasExtent();
+          positionRotateHandle();
+          updateContextGroupButton();
+          clearResult();
+        };
+        const stop = () => {
+          node.removeEventListener('pointermove', move);
+          node.removeEventListener('pointerup', stop);
+          node.removeEventListener('pointercancel', stop);
+          // Ao encaixar uma mesa selecionada, aplica o mesmo deslocamento e rotação
+          // ao restante da seleção para que o grupo não perca sua forma.
+          const last = selectedObjects[selectedObjects.length - 1];
+          const movingTable = last?.type === 'table' ? findObject('table', last.id) : null;
+          const movingGroupIds = new Set(selectedObjects.filter(item => item.type === 'table').map(item => item.id));
+          if (movingTable) {
+            const width = movingTable.type === 'double' ? 154 : 116;
+            const height = width * Math.sqrt(3) / 4;
+            const before = {
+              x: movingTable.x, y: movingTable.y, rotation: movingTable.rotation || 0,
+              cx: movingTable.x + width/2, cy: movingTable.y + height/2
+            };
+            const snapshots = selectedObjects.map(item => {
+              const object = findObject(item.type, item.id);
+              if (!object || object === movingTable) return null;
+              const w = item.type === 'chair' ? 51 : object.type === 'double' ? 154 : 116;
+              const h = item.type === 'chair' ? 29 : object.type === 'double' ? 66.68 : 50.23;
+              return { object, x:object.x, y:object.y, rotation:object.rotation||0, w, h, cx:object.x+w/2, cy:object.y+h/2 };
+            }).filter(Boolean);
+            if (snapTableVertices(movingTable, movingGroupIds)) {
+              const delta = ((movingTable.rotation - before.rotation + 540) % 360) - 180;
+              const radians = delta * Math.PI / 180;
+              const afterCx = movingTable.x + width/2, afterCy = movingTable.y + height/2;
+              snapshots.forEach(item => {
+                const dx = item.cx - before.cx, dy = item.cy - before.cy;
+                item.object.x = Math.max(0, afterCx + dx*Math.cos(radians) - dy*Math.sin(radians) - item.w/2);
+                item.object.y = Math.max(0, afterCy + dx*Math.sin(radians) + dy*Math.cos(radians) - item.h/2);
+                item.object.rotation = ((item.rotation + delta) % 360 + 360) % 360;
+              });
+              renderFreeChairs();
+            }
+          }
+        };
+        node.addEventListener('pointermove', move);
+        node.addEventListener('pointerup', stop);
+        node.addEventListener('pointercancel', stop);
+      });
+      node.addEventListener('keydown', event => {
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+          event.preventDefault();
+          removeSelectedObject();
+        } else if (event.key.toLowerCase() === 'r') {
+          rotateSelected();
+        }
+      });
+    }
+
+    // Mesas ficam atrás das cadeiras para facilitar a seleção.
+    tables.forEach((table, index) => {
+      const node = document.createElement('div');
+      node.className = 'furniture' + (table.type === 'double' ? ' double' : '') +
+        (selectionHas('table', table.id) ? ' selected' : '') + (table.groupId ? ' grouped' : '');
+      node.dataset.tableId = String(table.id);
+      node.style.left = (table.x * zoomLevel) + 'px';
+      node.style.top = (table.y * zoomLevel) + 'px';
+      node.style.transform = `scale(${zoomLevel}) rotate(${table.rotation || 0}deg)`;
+      node.style.zIndex = selectionHas('table', table.id) ? '3' : '1';
+      node.tabIndex = 0;
+      node.setAttribute('role', 'button');
+      node.setAttribute('aria-label', table.type === 'double' ? `Mesa de dois lugares ${index + 1}` : `Mesa individual ${index + 1}`);
+      const label = document.createElement('span');
+      label.className = 'tableLabel';
+      label.textContent = table.type === 'double' ? 'Dupla' : 'Individual';
+      node.appendChild(label);
+      attachObjectEvents(node, table, 'table');
+      freeCanvas.appendChild(node);
+    });
+
+    freeChairs.forEach((chair, index) => {
+      const node = document.createElement('div');
+      node.className = 'chair' + (selectionHas('chair', chair.id) ? ' selected' : '');
+      node.dataset.chairId = String(chair.id);
+      node.style.left = (chair.x * zoomLevel) + 'px';
+      node.style.top = (chair.y * zoomLevel) + 'px';
+      node.style.transform = `scale(${zoomLevel}) rotate(${chair.rotation || 0}deg)`;
+      node.style.zIndex = selectionHas('chair', chair.id) ? '4' : '2';
+      node.innerHTML = `<span class="seatNo">Cadeira ${index + 1}</span><span class="student"></span>`;
+      node.tabIndex = 0;
+      node.setAttribute('role', 'button');
+      node.setAttribute('aria-label', `Cadeira ${index + 1}; arraste para mover, R para girar ou Delete para remover`);
+      attachObjectEvents(node, chair, 'chair');
+      freeCanvas.appendChild(node);
+    });
+    updateSelectedControls();
+    createRotateHandle();
+    updateCanvasExtent();
+  }
+
+  function removeSelectedChair() {
+    if (selectedObject?.type === 'chair') removeSelectedObject();
+  }
+
+  // Calcula uma distância entre dois lugares. No modo livre, usa as coordenadas.
+  function distance(a, b) {
+    const dx = a.x - b.x, dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  // Embaralha os alunos e tenta maximizar a distância entre os alunos marcados.
+  function makeAssignments() {
+    const names = uniqueNames(readLines(namesEl));
+    if (!names.length) {
+      setStatus('Digite pelo menos um nome de aluno.', 'error');
+      return null;
+    }
+    const separated = new Set(readLines(separatedEl).map(s => s.toLocaleLowerCase('pt-BR')));
+    const isGrid = currentMode() === 'grid';
+    let places = [];
+    if (isGrid) {
+      const rows = Math.max(1, parseInt(rowsEl.value, 10) || 1);
+      const cols = Math.max(1, parseInt(colsEl.value, 10) || 1);
+      const total = rows * cols;
+      // Descarta índices inválidos para que mudanças na grade não quebrem o sorteio.
+      places = [...activeSeats]
+        .filter(index => Number.isInteger(index) && index >= 0 && index < total)
+        .sort((a,b) => a-b)
+        .map(index => ({ id: index + 1, index, x: index % cols, y: Math.floor(index / cols) }));
+    } else {
+      places = freeChairs
+        .filter(c => c && Number.isFinite(c.id))
+        .map((c, index) => ({ id: c.id, index, x: Number(c.x) || 0, y: Number(c.y) || 0 }));
+    }
+    if (places.length < names.length) {
+      setStatus(`Não é possível sortear: há ${places.length} cadeiras disponíveis para ${names.length} alunos. Ative ou adicione pelo menos ${names.length - places.length} cadeira(s).`, 'error');
+      return null;
+    }
+
+    // Ordena primeiro os alunos que precisam de separação e tenta várias combinações.
+    const apartNames = names.filter(n => separated.has(n.toLocaleLowerCase('pt-BR')));
+    const regularNames = names.filter(n => !separated.has(n.toLocaleLowerCase('pt-BR')));
+    let best = null, bestScore = -Infinity;
+    const attempts = Math.min(300, Math.max(60, names.length * 15));
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const shuffledPlaces = [...places].sort(() => Math.random() - 0.5);
+      const shuffledApart = [...apartNames].sort(() => Math.random() - 0.5);
+      const assignment = [];
+      shuffledApart.forEach((name, i) => assignment.push({ name, place: shuffledPlaces[i] }));
+      [...regularNames].sort(() => Math.random() - 0.5).forEach((name, i) => assignment.push({ name, place: shuffledPlaces[apartNames.length + i] }));
+
+      // Pontuação alta significa que alunos da lista de separação ficaram distantes.
+      let score = 0;
+      const placedApart = assignment.filter(a => separated.has(a.name.toLocaleLowerCase('pt-BR')));
+      for (let i = 0; i < placedApart.length; i++) {
+        for (let j = i + 1; j < placedApart.length; j++) {
+          score += distance(placedApart[i].place, placedApart[j].place);
+        }
+      }
+      if (score > bestScore) { bestScore = score; best = assignment; }
+    }
+    return best;
+  }
+
+  // Aplica os nomes no mapa e cria uma lista legível do resultado.
+  // Mostra uma versão curta no assento e mantém o nome completo no tooltip.
+  function setSeatStudentName(node, fullName, isGrid) {
+    if (!node) return;
+    const student = node.querySelector('.student');
+    if (!student) return;
+    const maxChars = isGrid ? 12 : 9;
+    const chars = Array.from(String(fullName || '').trim());
+    const shortName = chars.length > maxChars
+      ? chars.slice(0, maxChars - 1).join('') + '…'
+      : chars.join('');
+    student.textContent = shortName;
+    student.title = fullName || '';
+    node.title = fullName ? `${fullName}` : '';
+    if (fullName) node.setAttribute('aria-label', `${node.querySelector('.seatNo')?.textContent || 'Assento'}: ${fullName}`);
+  }
+
+  function draw() {
+    const assignments = makeAssignments();
+    if (!assignments) return;
+    clearResult();
+    const isGrid = currentMode() === 'grid';
+    assignments.forEach(item => {
+      const selector = isGrid
+        ? `.seat[data-index="${item.place.index}"]`
+        : `.chair[data-chair-id="${item.place.id}"]`;
+      const node = document.querySelector(selector);
+      if (node) {
+        node.classList.add('occupied');
+        setSeatStudentName(node, item.name, isGrid);
+      }
+    });
+    lastAssignments = assignments.map(item => ({
+      name: item.name,
+      seatLabel: isGrid ? `Lugar ${item.place.id}` : `Cadeira ${freeChairs.findIndex(c => c.id === item.place.id) + 1}`
+    })).sort((a,b) => a.seatLabel.localeCompare(b.seatLabel, 'pt-BR', { numeric:true }));
+    resultsEl.replaceChildren();
+    lastAssignments.forEach(item => {
+      const card = document.createElement('div');
+      card.className = 'resultItem';
+      const strong = document.createElement('strong');
+      strong.textContent = item.seatLabel;
+      const span = document.createElement('span');
+      span.textContent = item.name;
+      card.append(strong, span);
+      resultsEl.appendChild(card);
+    });
+    setStatus(`Sorteio concluído: ${assignments.length} aluno(s) distribuído(s) em ${assignments.length} lugar(es).`, 'success');
+  }
+
+  // Seleção por caixa (marquee), semelhante ao Canva. Botão do meio continua movendo o mapa.
+  let marqueeState = null;
+  let marqueeNode = null;
+  function canvasPoint(event) {
+    const rect = freeCanvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left + freeCanvas.scrollLeft) / zoomLevel,
+      y: (event.clientY - rect.top + freeCanvas.scrollTop) / zoomLevel
+    };
+  }
+  function objectBounds(entry) {
+    const o = entry.object;
+    const w = entry.type === 'chair' ? 51 : (o.type === 'double' ? 154 : 116);
+    const h = entry.type === 'chair' ? 29 : (o.type === 'double' ? 66.68 : 50.23);
+    return { left:o.x, top:o.y, right:o.x+w, bottom:o.y+h };
+  }
+  freeCanvas.addEventListener('pointerdown', event => {
+    if (event.button === 1) {
+      panState = { x:event.clientX, y:event.clientY, left:freeCanvas.scrollLeft, top:freeCanvas.scrollTop };
+      freeCanvas.classList.add('panning');
+      freeCanvas.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+    if (event.button !== 0 || event.target !== freeCanvas) return;
+    const point = canvasPoint(event);
+    marqueeState = { start:point, current:point, additive:event.shiftKey, original: event.shiftKey ? [...selectedObjects] : [] };
+    if (!event.shiftKey) {
+      selectedObjects = [];
+      selectedObject = null;
+      syncSelectionVisuals();
+      updateSelectedControls();
+      removeRotateHandle();
+    }
+    marqueeNode = document.createElement('div');
+    marqueeNode.className = 'selection-marquee';
+    freeCanvas.appendChild(marqueeNode);
+    freeCanvas.classList.add('selecting');
+    freeCanvas.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+  });
+  freeCanvas.addEventListener('pointermove', event => {
+    if (panState) {
+      freeCanvas.scrollLeft = panState.left - (event.clientX - panState.x);
+      freeCanvas.scrollTop = panState.top - (event.clientY - panState.y);
+      return;
+    }
+    if (!marqueeState || !marqueeNode) return;
+    const point = canvasPoint(event);
+    marqueeState.current = point;
+    const left = Math.min(point.x, marqueeState.start.x);
+    const top = Math.min(point.y, marqueeState.start.y);
+    const width = Math.abs(point.x - marqueeState.start.x);
+    const height = Math.abs(point.y - marqueeState.start.y);
+    marqueeNode.style.left = `${left * zoomLevel}px`;
+    marqueeNode.style.top = `${top * zoomLevel}px`;
+    marqueeNode.style.width = `${width * zoomLevel}px`;
+    marqueeNode.style.height = `${height * zoomLevel}px`;
+    const box = { left, top, right:left+width, bottom:top+height };
+    const hits = allFreeObjects().filter(entry => {
+      const b = objectBounds(entry);
+      return b.left <= box.right && b.right >= box.left && b.top <= box.bottom && b.bottom >= box.top;
+    });
+    selectedObjects = [...marqueeState.original];
+    hits.forEach(entry => {
+      if (!selectionHas(entry.type, entry.id)) {
+        if (entry.object.groupId) {
+          allFreeObjects().filter(other => other.object.groupId === entry.object.groupId).forEach(other => {
+            if (!selectionHas(other.type, other.id)) selectedObjects.push({type:other.type,id:other.id});
+          });
+        } else selectedObjects.push({type:entry.type,id:entry.id});
+      }
+    });
+    selectedObject = selectedObjects.length ? selectedObjects[selectedObjects.length-1] : null;
+    syncSelectionVisuals();
+    updateSelectedControls();
+    removeRotateHandle();
+    if (selectedObjects.length >= 1) createRotateHandle();
+  });
+  function stopPan() { panState = null; freeCanvas.classList.remove('panning'); }
+  function stopMarquee() {
+    if (marqueeNode) marqueeNode.remove();
+    marqueeNode = null;
+    marqueeState = null;
+    freeCanvas.classList.remove('selecting');
+    if (selectedObjects.length >= 1) createRotateHandle();
+    else removeRotateHandle();
+    updateSelectedControls();
+  }
+  freeCanvas.addEventListener('pointerup', () => { stopPan(); stopMarquee(); });
+  freeCanvas.addEventListener('pointercancel', () => { stopPan(); stopMarquee(); });
+
+  // Atalhos de teclado no estilo Canva.
+  document.addEventListener('keydown', event => {
+    const tag = event.target?.tagName?.toLowerCase();
+    const typing = ['input','textarea','select'].includes(tag) || event.target?.isContentEditable;
+    const mod = event.ctrlKey || event.metaKey;
+    if (event.key === 'Escape') {
+      selectedObjects = [];
+      selectedObject = null;
+      syncSelectionVisuals();
+      updateSelectedControls();
+      removeRotateHandle();
+      return;
+    }
+    if (typing || !mod) return;
+    if (event.key.toLowerCase() === 'd') {
+      if (selectedObjects.length) {
+        event.preventDefault();
+        duplicateSelectedObjects();
+      }
+    } else if (event.key.toLowerCase() === 'g' && event.shiftKey) {
+      if (selectedObjects.some(item => findObject(item.type, item.id)?.groupId)) {
+        event.preventDefault();
+        ungroupSelectedObjects();
+      }
+    } else if (event.key.toLowerCase() === 'g' && !event.shiftKey) {
+      if (selectedObjects.length >= 2) {
+        event.preventDefault();
+        groupSelectedObjects();
+      }
+    }
+  });
+
+  // Eventos dos controles.
+  $('sortBtn').addEventListener('click', draw);
+  $('newDrawBtn').addEventListener('click', draw);
+  $('rebuildGridBtn').addEventListener('click', () => { buildGrid(false); setStatus('Grade atualizada.'); });
+  $('allOnBtn').addEventListener('click', () => {
+    const total = parseInt(rowsEl.value,10) * parseInt(colsEl.value,10);
+    activeSeats = new Set(Array.from({length:total}, (_,i)=>i));
+    buildGrid(true); setStatus('Todas as cadeiras foram ativadas.');
+  });
+  $('allOffBtn').addEventListener('click', () => {
+    activeSeats.clear();
+    buildGrid(true); setStatus('Todas as cadeiras foram desativadas.');
+  });
+  $('invertBtn').addEventListener('click', () => {
+    const total = parseInt(rowsEl.value,10) * parseInt(colsEl.value,10);
+    const old = new Set(activeSeats);
+    activeSeats = new Set(Array.from({length:total}, (_,i)=>i).filter(i => !old.has(i)));
+    buildGrid(true); setStatus('Seleção de cadeiras invertida.');
+  });
+  $('addChairBtn').addEventListener('click', () => {
+    freeChairs.push({ id: nextChairId++, x: 12, y: 12, rotation: 0 });
+    $('freeChairCount').value = freeChairs.length;
+    arrangeChairPositions(freeChairs);
+    renderFreeChairs();
+    clearResult();
+    setStatus(`Cadeira adicionada. Total: ${freeChairs.length}.`, 'success');
+  });
+  $('applyChairCountBtn').addEventListener('click', applyExactChairCount);
+  $('freeChairCount').addEventListener('keydown', event => {
+    if (event.key === 'Enter') applyExactChairCount();
+  });
+  $('resetChairsBtn').addEventListener('click', () => { resetFreeChairs(); setStatus('Cadeiras reorganizadas.'); });
+  $('removeChairBtn').addEventListener('click', removeSelectedChair);
+  $('removeObjectBtn').addEventListener('click', removeSelectedObject);
+  $('duplicateObjectsBtn').addEventListener('click', duplicateSelectedObjects);
+  $('rotateSelectedBtn').addEventListener('click', rotateSelected);
+  $('vertexSnapBtn').addEventListener('click', () => {
+    vertexSnapEnabled = !vertexSnapEnabled;
+    updateVertexSnapButton();
+    setStatus(`Encaixe de vértices ${vertexSnapEnabled ? 'ativado' : 'desativado'}.`, 'success');
+  });
+  $('addTableBtn').addEventListener('click', addTable);
+  $('zoomOutBtn').addEventListener('click', () => setZoom(zoomLevel - 0.1));
+  $('zoomInBtn').addEventListener('click', () => setZoom(zoomLevel + 0.1));
+  $('zoomResetBtn').addEventListener('click', () => setZoom(1));
+  $('zoomRange').addEventListener('input', event => setZoom(Number(event.target.value) / 100));
+  $('applyChairCountBtn').addEventListener('click', applyExactChairCount);
+  $('freeChairCount').addEventListener('keydown', event => {
+    if (event.key === 'Enter') applyExactChairCount();
+  });
+  $('clearNamesBtn').addEventListener('click', () => {
+    namesEl.value = '';
+    separatedEl.value = '';
+    clearResult();
+    setStatus('Lista de alunos limpa.');
+  });
+  $('copyBtn').addEventListener('click', async () => {
+    if (!lastAssignments.length) { setStatus('Faça um sorteio antes de copiar o resultado.', 'error'); return; }
+    const text = lastAssignments.map(item => `${item.seatLabel}: ${item.name}`).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatus('Resultado copiado para a área de transferência.', 'success');
+    } catch {
+      const temp = document.createElement('textarea');
+      temp.value = text;
+      document.body.appendChild(temp);
+      temp.select();
+      const ok = document.execCommand('copy');
+      temp.remove();
+      setStatus(ok ? 'Resultado copiado para a área de transferência.' : 'Não foi possível copiar automaticamente. Selecione e copie o resultado.', ok ? 'success' : 'error');
+    }
+  });
+  modeEl.addEventListener('change', () => {
+    updateMode();
+    clearResult();
+  });
+  namesEl.addEventListener('input', () => {
+    if (currentMode() === 'free') setStatus('Se adicionar mais alunos que cadeiras, será necessário criar mais cadeiras antes do sorteio.');
+  });
+  document.addEventListener('keydown', event => {
+    if ((event.key === 'Delete' || event.key === 'Backspace') &&
+        currentMode() === 'free' && selectedObject !== null &&
+        !['INPUT','TEXTAREA','SELECT','BUTTON'].includes(document.activeElement.tagName)) {
+      removeSelectedObject();
+    }
+    if ((event.key === 'r' || event.key === 'R') &&
+        currentMode() === 'free' && selectedObject !== null &&
+        !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) {
+      rotateSelected();
+    }
+  });
+
+  // Inicialização da página.
+  buildGrid(false);
+  resetFreeChairs();
+  updateVertexSnapButton();
+  setZoom(1);
+  updateMode();
+})();
+</script>
+</body>
+</html>
