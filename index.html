@@ -6,7 +6,7 @@
 <title>Sorteador de Lugares da Sala</title>
 <style>
   :root {
-    --bg:#fbfdf5; --panel:#fffefa; --ink:#343b46; --muted:#78818d;
+    --bg:#f7f5f2; --panel:#fffefa; --ink:#343b46; --muted:#78818d;
     --accent:#8da9c4; --accent-dark:#607f9e; --accent2:#eaf1f7;
     --danger:#b77979; --line:#e7e4df; --soft:#f0ede7; --mint:#e8f2ed;
   }
@@ -95,11 +95,18 @@
     transform: none !important;
   }
   #studentTooltip.visible { display: block; }
-  .results { margin-top:19px; }
-  .resultList { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:8px; }
-  .resultItem { border:1px solid var(--line); border-radius:11px; padding:10px 12px; background:#fff; }
-  .resultItem strong { display:block; font-size:.88rem; }
-  .resultItem span { color:var(--muted); font-size:.88rem; overflow-wrap:anywhere; }
+  .mapHeader { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:13px; }
+  .mapHeader h2 { margin:0; }
+  .mapTools { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .fsOnly { display:none; }
+  #fsStatus { font-size:.85rem; color:var(--muted); }
+  body.noScroll { overflow:hidden; }
+  #mapPanel.mapFs { position:fixed; inset:0; z-index:9000; width:100%; height:100%; border:0; border-radius:0; box-shadow:none; overflow:auto; display:flex; flex-direction:column; padding:14px 18px; }
+  #mapPanel.mapFs .fsOnly { display:inline-block; }
+  #mapPanel.mapFs #fsStatus.fsOnly { display:block; }
+  #mapPanel.mapFs #gridView { flex:1 1 0; min-height:0; }
+  #mapPanel.mapFs #freeView { display:flex; flex-direction:column; flex:1 1 0; min-height:0; }
+  #mapPanel.mapFs #freeCanvas { flex:1 1 0; height:auto !important; min-height:0 !important; }
   @media (max-width:850px) { body { padding:13px; } .layout { grid-template-columns:1fr; } .panel { padding:15px; } }
 </style>
 </head>
@@ -181,8 +188,15 @@
       <div id="status" class="status" role="status" aria-live="polite">Adicione os nomes dos alunos para começar.</div>
     </section>
 
-    <section class="panel">
-      <h2>2. Mapa da sala</h2>
+    <section class="panel" id="mapPanel">
+      <div class="mapHeader">
+        <h2>2. Mapa da sala</h2>
+        <div class="mapTools">
+          <span id="fsStatus" class="fsOnly" role="status" aria-live="polite"></span>
+          <button id="fsSortBtn" type="button" class="primary fsOnly">Sortear lugares</button>
+          <button id="fullscreenBtn" type="button" aria-pressed="false">⛶ Tela cheia</button>
+        </div>
+      </div>
       <div id="gridView" class="classroom">
         <div class="board">
           <div class="front" id="frontGrid">QUADRO / PROFESSOR</div>
@@ -200,14 +214,6 @@
           <span id="zoomValue" class="zoomValue">100%</span>
         </div>
       </div>
-      <div class="results">
-        <h2>3. Resultado do sorteio</h2>
-        <div class="row" style="margin-bottom:10px">
-          <button id="copyBtn">Copiar resultado</button>
-          <button id="newDrawBtn" class="primary">Novo sorteio</button>
-        </div>
-        <div id="results" class="resultList"><p class="small">O resultado aparecerá aqui após o sorteio.</p></div>
-      </div>
     </section>
   </div>
 </main>
@@ -223,7 +229,6 @@
   const colsEl = $('cols');
   const seatGrid = $('seatGrid');
   const freeCanvas = $('freeCanvas');
-  const resultsEl = $('results');
   const statusEl = $('status');
 
   // Estado da configuração: assentos ativos, cadeiras livres e último sorteio.
@@ -240,6 +245,7 @@
   let panState = null;
   let zoomLevel = 1;
   let lastAssignments = [];
+  let freeAssignments = new Map(); // id da cadeira livre -> nome sorteado (sobrevive à personalização da sala)
 
   // Lê nomes, remove espaços extras e ignora linhas vazias.
   function readLines(element) {
@@ -249,6 +255,8 @@
     return [...new Set(list)];
   }
   function setStatus(message, type = '') {
+    const fs = document.getElementById('fsStatus');
+    if (fs) fs.textContent = message;
     statusEl.textContent = message;
     statusEl.className = 'status' + (type ? ' ' + type : '');
   }
@@ -257,6 +265,7 @@
   // Limpa a exibição do sorteio anterior sem alterar a configuração das cadeiras.
   function clearResult() {
     lastAssignments = [];
+    freeAssignments.clear();
     document.querySelectorAll('.seat, .chair').forEach(node => {
       node.classList.remove('occupied');
       const student = node.querySelector('.student');
@@ -267,13 +276,28 @@
       node.removeAttribute('title');
       node.removeAttribute('aria-label');
     });
-    if (resultsEl) {
-      resultsEl.replaceChildren();
-      const message = document.createElement('p');
-      message.className = 'small';
-      message.textContent = 'O resultado aparecerá aqui após o sorteio.';
-      resultsEl.appendChild(message);
-    }
+  }
+
+  // Mantém o sorteio do modo livre depois de qualquer edição da sala (mover, girar,
+  // zoom, adicionar/remover mesas e cadeiras...). Remove nomes de cadeiras que não
+  // existem mais, reaplica os nomes nas cadeiras redesenhadas e atualiza a lista.
+  function syncFreeResult() {
+    const ids = new Set(freeChairs.map(c => c.id));
+    [...freeAssignments.keys()].forEach(id => { if (!ids.has(id)) freeAssignments.delete(id); });
+    freeChairs.forEach(chair => {
+      const name = freeAssignments.get(chair.id);
+      if (!name) return;
+      const node = freeCanvas.querySelector(`.chair[data-chair-id="${chair.id}"]`);
+      if (!node) return;
+      node.classList.add('occupied');
+      setSeatStudentName(node, name, false);
+    });
+    if (currentMode() !== 'free') return;
+    lastAssignments = freeChairs
+      .map((chair, index) => ({ chair, index }))
+      .filter(({ chair }) => freeAssignments.has(chair.id))
+      .map(({ chair, index }) => ({ name: freeAssignments.get(chair.id), seatLabel: `Cadeira ${index + 1}` }))
+      .sort((a,b) => a.seatLabel.localeCompare(b.seatLabel, 'pt-BR', { numeric:true }));
   }
 
   // Mostra o nome completo num balão horizontal independente da rotação da cadeira.
@@ -481,7 +505,9 @@
     const input = $('freeChairCount');
     const count = Math.max(0, Math.min(150, parseInt(input.value, 10) || 0));
     input.value = count;
+    let unseated = 0;
     if (freeChairs.length > count) {
+      unseated = freeChairs.slice(count).filter(c => freeAssignments.has(c.id)).length;
       freeChairs = freeChairs.slice(0, count);
       if (selectedObject?.type === 'chair' && !freeChairs.some(c => c.id === selectedObject.id)) selectedObject = null;
     } else {
@@ -489,9 +515,12 @@
     }
     arrangeChairPositions(freeChairs);
     renderFreeChairs();
-    clearResult();
     updateSelectedControls();
     const students = uniqueNames(readLines(namesEl)).length;
+    if (unseated) {
+      setStatus(`Quantidade definida: ${count} cadeira(s). ${unseated} aluno(s) ficaram sem lugar; sorteie novamente para redistribuir.`, 'error');
+      return;
+    }
     setStatus(count < students
       ? `Quantidade definida: ${count} cadeira(s). Há ${students} aluno(s), então adicione cadeiras antes de sortear.`
       : `Quantidade definida: exatamente ${count} cadeira(s).`, count < students ? 'error' : 'success');
@@ -501,13 +530,16 @@
   function resetFreeChairs() {
     const count = Math.max(0, Math.min(150, parseInt($('freeChairCount').value, 10) || 0));
     $('freeChairCount').value = count;
+    const previousNames = freeChairs.map(c => freeAssignments.get(c.id));
     freeChairs = [];
     nextChairId = 1;
     selectedObject = null;
     for (let i = 0; i < count; i++) freeChairs.push({ id: nextChairId++, x: 16, y: 16, rotation: 0 });
+    // As cadeiras são recriadas com novos ids; o sorteio acompanha a ordem das cadeiras.
+    freeAssignments = new Map();
+    freeChairs.forEach((chair, i) => { if (previousNames[i]) freeAssignments.set(chair.id, previousNames[i]); });
     arrangeChairPositions(freeChairs);
     renderFreeChairs();
-    clearResult();
     updateSelectedControls();
   }
 
@@ -572,13 +604,13 @@
       });
     }
     renderFreeChairs();
-    clearResult();
   }
 
   function removeSelectedObject() {
     if (!selectedObjects.length) return;
     const selectedChairs = new Set(selectedObjects.filter(item => item.type === 'chair').map(item => item.id));
     const selectedTables = new Set(selectedObjects.filter(item => item.type === 'table').map(item => item.id));
+    const unseated = [...selectedChairs].filter(id => freeAssignments.has(id)).length;
     freeChairs = freeChairs.filter(c => !selectedChairs.has(c.id));
     tables = tables.filter(t => !selectedTables.has(t.id));
     $('freeChairCount').value = freeChairs.length;
@@ -586,9 +618,10 @@
     selectedObject = null;
     arrangeChairPositions(freeChairs);
     renderFreeChairs();
-    clearResult();
     updateSelectedControls();
-    setStatus('Objeto(s) removido(s).', 'success');
+    setStatus(unseated
+      ? `Objeto(s) removido(s). ${unseated} aluno(s) ficaram sem lugar; sorteie novamente para redistribuir.`
+      : 'Objeto(s) removido(s).', unseated ? 'error' : 'success');
   }
 
   function groupSelectedObjects() {
@@ -640,7 +673,6 @@
     selectedObjects = copies;
     selectedObject = copies[copies.length - 1] || null;
     renderFreeChairs();
-    clearResult();
     setStatus(`${copies.length} objeto(s) duplicado(s). A cópia foi selecionada para mover ou girar.`, 'success');
   }
 
@@ -651,7 +683,6 @@
     tables.push({ id: nextTableId++, type, x: 24 + (i % 3) * 170, y: 24 + Math.floor(i / 3) * 125, rotation: 0 });
     freeCanvas.style.minHeight = Math.max(freeCanvas.clientHeight, 150 + Math.floor(i / 3) * 125) + 'px';
     renderFreeChairs();
-    clearResult();
     setStatus(type === 'double' ? 'Mesa dupla adicionada.' : 'Mesa individual adicionada.', 'success');
   }
 
@@ -745,7 +776,6 @@
         rotateHandle?.removeEventListener('pointermove', move);
         rotateHandle?.removeEventListener('pointerup', stop);
         rotateHandle?.removeEventListener('pointercancel', stop);
-        clearResult();
         renderFreeChairs();
       };
       rotateHandle.addEventListener('pointermove', move);
@@ -877,7 +907,6 @@
           updateCanvasExtent();
           positionRotateHandle();
           updateContextGroupButton();
-          clearResult();
         };
         const stop = () => {
           node.removeEventListener('pointermove', move);
@@ -969,6 +998,7 @@
     updateSelectedControls();
     createRotateHandle();
     updateCanvasExtent();
+    syncFreeResult();
   }
 
   function removeSelectedChair() {
@@ -1057,6 +1087,7 @@
     if (!assignments) return;
     clearResult();
     const isGrid = currentMode() === 'grid';
+    if (!isGrid) assignments.forEach(item => freeAssignments.set(item.place.id, item.name));
     assignments.forEach(item => {
       const selector = isGrid
         ? `.seat[data-index="${item.place.index}"]`
@@ -1071,17 +1102,6 @@
       name: item.name,
       seatLabel: isGrid ? `Lugar ${item.place.id}` : `Cadeira ${freeChairs.findIndex(c => c.id === item.place.id) + 1}`
     })).sort((a,b) => a.seatLabel.localeCompare(b.seatLabel, 'pt-BR', { numeric:true }));
-    resultsEl.replaceChildren();
-    lastAssignments.forEach(item => {
-      const card = document.createElement('div');
-      card.className = 'resultItem';
-      const strong = document.createElement('strong');
-      strong.textContent = item.seatLabel;
-      const span = document.createElement('span');
-      span.textContent = item.name;
-      card.append(strong, span);
-      resultsEl.appendChild(card);
-    });
     setStatus(`Sorteio concluído: ${assignments.length} aluno(s) distribuído(s) em ${assignments.length} lugar(es).`, 'success');
   }
 
@@ -1209,9 +1229,40 @@
     }
   });
 
+  // Tela cheia do mapa da sala (usa a API nativa quando existe; senão, cobre a janela).
+  const mapPanel = $('mapPanel');
+  const fullscreenBtn = $('fullscreenBtn');
+  function isMapFullscreen() { return mapPanel.classList.contains('mapFs'); }
+  function setMapFullscreen(on) {
+    mapPanel.classList.toggle('mapFs', on);
+    document.body.classList.toggle('noScroll', on);
+    // O balão com o nome precisa estar dentro do elemento em tela cheia para aparecer.
+    (on ? mapPanel : document.body).appendChild(studentTooltip);
+    hideStudentTooltip();
+    fullscreenBtn.textContent = on ? '✕ Sair da tela cheia' : '⛶ Tela cheia';
+    fullscreenBtn.setAttribute('aria-pressed', String(on));
+    updateCanvasExtent();
+  }
+  async function toggleMapFullscreen() {
+    if (!isMapFullscreen()) {
+      setMapFullscreen(true);
+      try { await mapPanel.requestFullscreen?.(); } catch (e) { /* mantém o modo sobreposto */ }
+    } else {
+      if (document.fullscreenElement) { try { await document.exitFullscreen(); } catch (e) {} }
+      setMapFullscreen(false);
+    }
+  }
+  fullscreenBtn.addEventListener('click', toggleMapFullscreen);
+  $('fsSortBtn').addEventListener('click', draw);
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && isMapFullscreen()) setMapFullscreen(false);
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && isMapFullscreen() && !document.fullscreenElement) setMapFullscreen(false);
+  });
+
   // Eventos dos controles.
   $('sortBtn').addEventListener('click', draw);
-  $('newDrawBtn').addEventListener('click', draw);
   $('rebuildGridBtn').addEventListener('click', () => { buildGrid(false); setStatus('Grade atualizada.'); });
   $('allOnBtn').addEventListener('click', () => {
     const total = parseInt(rowsEl.value,10) * parseInt(colsEl.value,10);
@@ -1233,7 +1284,6 @@
     $('freeChairCount').value = freeChairs.length;
     arrangeChairPositions(freeChairs);
     renderFreeChairs();
-    clearResult();
     setStatus(`Cadeira adicionada. Total: ${freeChairs.length}.`, 'success');
   });
   $('applyChairCountBtn').addEventListener('click', applyExactChairCount);
@@ -1264,22 +1314,6 @@
     separatedEl.value = '';
     clearResult();
     setStatus('Lista de alunos limpa.');
-  });
-  $('copyBtn').addEventListener('click', async () => {
-    if (!lastAssignments.length) { setStatus('Faça um sorteio antes de copiar o resultado.', 'error'); return; }
-    const text = lastAssignments.map(item => `${item.seatLabel}: ${item.name}`).join('\n');
-    try {
-      await navigator.clipboard.writeText(text);
-      setStatus('Resultado copiado para a área de transferência.', 'success');
-    } catch {
-      const temp = document.createElement('textarea');
-      temp.value = text;
-      document.body.appendChild(temp);
-      temp.select();
-      const ok = document.execCommand('copy');
-      temp.remove();
-      setStatus(ok ? 'Resultado copiado para a área de transferência.' : 'Não foi possível copiar automaticamente. Selecione e copie o resultado.', ok ? 'success' : 'error');
-    }
   });
   modeEl.addEventListener('change', () => {
     updateMode();
